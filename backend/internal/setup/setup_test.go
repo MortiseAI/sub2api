@@ -3,7 +3,10 @@ package setup
 import (
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -296,6 +299,78 @@ func TestDatabaseConnectionDSNsUseConfiguredTargetAndLegacyBootstrapDatabase(t *
 	}
 	if !strings.Contains(bootstrapDSN, "dbname=postgres") {
 		t.Fatalf("bootstrap DSN = %q, want legacy postgres bootstrap database", bootstrapDSN)
+	}
+}
+
+type postgresStartupDialer struct {
+	net.Conn
+}
+
+func (d postgresStartupDialer) Dial(_, _ string) (net.Conn, error) {
+	return d.Conn, nil
+}
+
+func (d postgresStartupDialer) DialTimeout(_, _ string, _ time.Duration) (net.Conn, error) {
+	return d.Conn, nil
+}
+
+func TestDatabaseConnectionDSNPreservesDatabaseWithEmptyPassword(t *testing.T) {
+	// A missing dbname falls back to the username in lib/pq. Inspect the real
+	// driver's startup packet so an empty password cannot swallow dbname.
+	t.Setenv("PGDATABASE", "")
+	for _, dbName := range []string{"sub2api", postgresBootstrapDatabase} {
+		t.Run(dbName, func(t *testing.T) {
+			cfg := &DatabaseConfig{
+				Host: "localhost", Port: 5432, User: "hugohu",
+				DBName: "sub2api", SSLMode: "disable",
+			}
+			connector, err := pq.NewConnector(buildPostgresDSN(cfg, dbName))
+			if err != nil {
+				t.Fatalf("parse setup DSN: %v", err)
+			}
+			client, server := net.Pipe()
+			defer client.Close()
+			defer server.Close()
+			deadline := time.Now().Add(5 * time.Second)
+			_ = client.SetDeadline(deadline)
+			_ = server.SetDeadline(deadline)
+			connector.Dialer(postgresStartupDialer{client})
+			type startupResult struct {
+				packet []byte
+				err    error
+			}
+			startup := make(chan startupResult, 1)
+			go func() {
+				defer server.Close()
+				var length [4]byte
+				if _, err := io.ReadFull(server, length[:]); err != nil {
+					startup <- startupResult{err: err}
+					return
+				}
+				packet := make([]byte, int(binary.BigEndian.Uint32(length[:]))-4)
+				_, err := io.ReadFull(server, packet)
+				startup <- startupResult{packet: packet, err: err}
+			}()
+			// The fake server closes after startup; authentication is unnecessary.
+			conn, _ := connector.Connect(context.Background())
+			if conn != nil {
+				_ = conn.Close()
+			}
+			result := <-startup
+			if result.err != nil {
+				t.Fatalf("read PostgreSQL startup: %v", result.err)
+			}
+			params := strings.Split(string(result.packet[4:]), "\x00")
+			var gotDatabase string
+			for i := 0; i+1 < len(params); i += 2 {
+				if params[i] == "database" {
+					gotDatabase = params[i+1]
+				}
+			}
+			if gotDatabase != dbName {
+				t.Fatalf("driver selected database %q, want %q", gotDatabase, dbName)
+			}
+		})
 	}
 }
 

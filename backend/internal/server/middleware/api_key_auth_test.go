@@ -1510,7 +1510,36 @@ func newAuthTestRouter(apiKeyService *service.APIKeyService, subscriptionService
 	router.POST("/v1/messages", ok)
 	router.GET("/v1/usage", ok)
 	router.GET("/v1/sub2api/billing", ok)
+	router.GET("/v1/sub2api/quota", ok)
 	return router
+}
+
+func TestAPIKeyAuthCodexQuotaSkipsBillingButRejectsDisabledKeys(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, status := range []string{service.StatusAPIKeyExpired, service.StatusAPIKeyQuotaExhausted, service.StatusDisabled} {
+		t.Run(status, func(t *testing.T) {
+			user := &service.User{ID: 7, Role: service.RoleUser, Status: service.StatusActive, Balance: 0}
+			group := &service.Group{ID: 8, Platform: service.PlatformOpenAI, Status: service.StatusActive, Hydrated: true}
+			expiredAt := time.Now().Add(-time.Hour)
+			apiKey := &service.APIKey{ID: 11, UserID: user.ID, Key: "quota-auth-test", Status: status, User: user, Group: group, GroupID: &group.ID,
+				Quota: 1, QuotaUsed: 1, ExpiresAt: &expiredAt}
+			touchCalls := 0
+			repo := &stubApiKeyRepo{getByKey: func(context.Context, string) (*service.APIKey, error) { return apiKey, nil },
+				updateLastUsed: func(context.Context, int64, time.Time) error { touchCalls++; return nil }}
+			cfg := &config.Config{RunMode: config.RunModeStandard}
+			router := newAuthTestRouter(service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, cfg), nil, cfg)
+			req := httptest.NewRequest(http.MethodGet, "/v1/sub2api/quota?model=client-model", nil)
+			req.Header.Set("Authorization", "Bearer "+apiKey.Key)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			expected := http.StatusOK
+			if status == service.StatusDisabled {
+				expected = http.StatusUnauthorized
+			}
+			require.Equal(t, expected, w.Code)
+			require.Zero(t, touchCalls, "quota polling must not mark the key as model traffic")
+		})
+	}
 }
 
 func requireAPIKeyAuthError(t *testing.T, w *httptest.ResponseRecorder, code, message string) {

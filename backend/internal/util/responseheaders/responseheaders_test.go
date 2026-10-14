@@ -48,6 +48,33 @@ func TestFilterHeadersAllowsReasoningIncludedByDefault(t *testing.T) {
 	}
 }
 
+func TestFilterHeadersAllowsCodexQuotaWithoutExposingOtherHeaders(t *testing.T) {
+	src := http.Header{}
+	src.Set("x-codex-primary-used-percent", "17")
+	src.Set("x-codex-primary-reset-after-seconds", "86400")
+	src.Set("x-codex-primary-window-minutes", "10080")
+	src.Set("x-codex-secondary-used-percent", "42")
+	src.Set("x-codex-secondary-reset-after-seconds", "3600")
+	src.Set("x-codex-secondary-window-minutes", "300")
+	src.Set("set-cookie", "secret")
+	filtered := FilterHeaders(src, CompileHeaderFilter(config.ResponseHeaderConfig{}))
+	for name, values := range src {
+		if name == "Set-Cookie" {
+			continue
+		}
+		if filtered.Get(name) != values[0] {
+			t.Fatalf("quota header %s lost", name)
+		}
+	}
+	if filtered.Get("set-cookie") != "" {
+		t.Fatal("unexpected cookie disclosure")
+	}
+	blocked := FilterHeaders(src, CompileHeaderFilter(config.ResponseHeaderConfig{Enabled: true, ForceRemove: []string{"x-codex-primary-used-percent"}}))
+	if blocked.Get("x-codex-primary-used-percent") != "" {
+		t.Fatal("explicit force_remove ignored")
+	}
+}
+
 func TestFilterHeadersForceRemoveOverridesReasoningIncluded(t *testing.T) {
 	src := http.Header{}
 	src.Set("X-Reasoning-Included", "1")

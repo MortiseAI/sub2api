@@ -195,6 +195,9 @@ func ProvideOpenAIQuotaService(
 ) *OpenAIQuotaService {
 	service := NewOpenAIQuotaService(accountRepo, proxyRepo, tokenProvider, privacyClientFactory, referralClient)
 	service.agentIdentityWS = openAIGatewayService
+	if openAIGatewayService != nil {
+		openAIGatewayService.BindKeyQuotaReader(service)
+	}
 	return service
 }
 

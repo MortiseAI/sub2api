@@ -178,7 +178,13 @@ security:
     enabled: true
     # Extra allowed response headers from upstream
     # 额外允许的上游响应头
-    additional_allowed: []
+    additional_allowed:
+      - x-codex-primary-used-percent
+      - x-codex-primary-reset-after-seconds
+      - x-codex-primary-window-minutes
+      - x-codex-secondary-used-percent
+      - x-codex-secondary-reset-after-seconds
+      - x-codex-secondary-window-minutes
     # Force-remove response headers from upstream
     # 强制移除的上游响应头
     force_remove: []

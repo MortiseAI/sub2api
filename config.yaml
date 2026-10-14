@@ -1,0 +1,37 @@
+server:
+    host: 0.0.0.0
+    port: 8080
+    mode: release
+database:
+    host: localhost
+    port: 5432
+    user: hugohu
+    password: ""
+    dbname: sub2api
+    sslmode: disable
+redis:
+    host: localhost
+    port: 6379
+    username: ""
+    password: ""
+    db: 0
+    enable_tls: false
+jwt:
+    secret: 0865fda963c6370047a5e4dba52c093b5647d3bc2fe1dcd37c6724791ec61fba
+    expire_hour: 24
+default:
+    user_concurrency: 5
+    user_balance: 0
+    api_key_prefix: sk-
+    rate_multiplier: 1
+timezone: Asia/Shanghai
+security:
+  response_headers:
+    enabled: true
+    additional_allowed:
+      - x-codex-primary-used-percent
+      - x-codex-primary-reset-after-seconds
+      - x-codex-primary-window-minutes
+      - x-codex-secondary-used-percent
+      - x-codex-secondary-reset-after-seconds
+      - x-codex-secondary-window-minutes
