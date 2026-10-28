@@ -35,3 +35,7 @@ security:
       - x-codex-secondary-used-percent
       - x-codex-secondary-reset-after-seconds
       - x-codex-secondary-window-minutes
+
+log:
+  output:
+    file_path: ./data/logs/sub2api.log
